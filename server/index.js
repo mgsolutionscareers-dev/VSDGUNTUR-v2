@@ -520,15 +520,57 @@ async function setStock(b) {
   });
 }
 
-function upload(b) {
-  const m = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(b.d||''));
+/** Photos go to Cloudinary when CLOUDINARY_URL (or the 3 CLOUDINARY_* vars) is set; otherwise to local disk (dev only). */
+const CLD = (() => {
+  // Preferred: one CLOUDINARY_URL = cloudinary://API_KEY:API_SECRET@CLOUD_NAME
+  const m = /^cloudinary:\/\/([^:]+):([^@]+)@(.+)$/.exec((process.env.CLOUDINARY_URL || '').trim());
+  if (m) return { key: m[1], secret: m[2], name: m[3] };
+  return {
+    name: (process.env.CLOUDINARY_CLOUD_NAME || '').trim(),
+    key: (process.env.CLOUDINARY_API_KEY || '').trim(),
+    secret: (process.env.CLOUDINARY_API_SECRET || '').trim(),
+  };
+})();
+const CLD_ON = !!(CLD.name && CLD.key && CLD.secret);
+console.log(CLD_ON ? `Photo uploads -> Cloudinary (cloud "${CLD.name}")` : 'WARNING: Cloudinary not configured - photos will be saved on local disk and LOST on redeploy');
+
+async function upload(b) {
+  const m = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(b.d || ''));
   if (!m) throw E('Please upload a JPG, PNG or WebP image');
-  const buf = Buffer.from(m[2],'base64'),
-        sig = { jpeg:'ffd8ff', png:'89504e47', webp:'52494646' }[m[1]];
-  if (buf.length > 4e6 || buf.subarray(0,4).toString('hex').indexOf(sig) !== 0)
+  const buf = Buffer.from(m[2], 'base64'),
+    sig = { jpeg: 'ffd8ff', png: '89504e47', webp: '52494646' }[m[1]];
+  if (buf.length > 4e6 || buf.subarray(0, 4).toString('hex').indexOf(sig) !== 0)
     throw E('Invalid image file');
-  const name = crypto.createHash('sha1').update(buf).digest('hex').slice(0,20) + '.' + (m[1]==='jpeg'?'jpg':m[1]);
-  fs.writeFileSync(path.join(DATA,'uploads',name), buf);
+  const hash = crypto.createHash('sha1').update(buf).digest('hex').slice(0, 20);
+  if (CLD_ON) {
+    const timestamp = String(Math.floor(Date.now() / 1000)),
+      folder = 'vsd',
+      toSign = `folder=${folder}&public_id=${hash}&timestamp=${timestamp}`,
+      signature = crypto.createHash('sha1').update(toSign + CLD.secret).digest('hex');
+    const form = new FormData();
+    form.append('file', `data:image/${m[1]};base64,${m[2]}`);
+    form.append('api_key', CLD.key);
+    form.append('timestamp', timestamp);
+    form.append('folder', folder);
+    form.append('public_id', hash);
+    form.append('signature', signature);
+    let r, j;
+    try {
+      r = await fetch(`https://api.cloudinary.com/v1_1/${CLD.name}/image/upload`, { method: 'POST', body: form });
+      j = await r.json();
+    } catch (e) {
+      console.error('Cloudinary upload failed', e);
+      throw E('Photo upload failed, please try again', 502);
+    }
+    if (!r.ok || !j.secure_url) {
+      console.error('Cloudinary error', j && j.error);
+      throw E('Photo upload failed, please try again', 502);
+    }
+    return { url: j.secure_url };
+  }
+  const name = hash + '.' + (m[1] === 'jpeg' ? 'jpg' : m[1]);
+  fs.mkdirSync(path.join(DATA, 'uploads'), { recursive: true });
+  fs.writeFileSync(path.join(DATA, 'uploads', name), buf);
   return { url: '/uploads/' + name };
 }
 
