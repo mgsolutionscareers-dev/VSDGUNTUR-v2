@@ -14,11 +14,10 @@ For the client's team. Plain steps, no database knowledge needed.
 |---|---|---|
 | Website + admin panel | the pages customers and the owner see | the project folder (`index.html`, `css/`, `js/`) |
 | Server | a small program (`server/index.js`) that serves the site and handles orders | runs on the hosting machine |
-| **Database** | **one file: `data/vsd.db`** – orders, products, stock, banners, settings | the `data/` folder, created automatically on first start |
-| Product photos | images uploaded in admin | `data/uploads/` |
+| **Database** | **Postgres (Supabase)** – orders, products, stock, banners, settings | cloud database (DATABASE_URL) |
+| Product photos | images uploaded in admin | `data/uploads/` on the server, or Cloudinary |
 
-There is **nothing to install for the database**. It is created by the server the first time it runs.
-The `data/` folder is the whole business – protect it and back it up.
+There is **nothing to install for the database** beyond setting `DATABASE_URL`. Tables are created automatically on first start.
 
 ## 2. What the client must prepare
 
@@ -31,19 +30,19 @@ The `data/` folder is the whole business – protect it and back it up.
 
 ## 3. Option A – Managed host (easiest: Railway / Render / similar)
 
-You need a host that (1) runs **Node.js 22.5 or newer**, (2) supports a **persistent disk / volume**. Without a persistent disk the database is erased on every restart.
+You need a host that runs **Node.js 22.5 or newer** and a **Postgres database** (Supabase free tier works well).
 
-1. Put the project in a GitHub repository (the client creates the account and the developer pushes the code).
-2. In the host: **New project → Deploy from GitHub** → pick the repository.
-3. Start command: `npm start` (build command: none).
-4. **Add a volume / disk** and mount it at `/data`.
+1. Create a Supabase project at supabase.com and copy the **connection string** (Settings → Database → Connection string → URI, with your password filled in).
+2. Put the project in a GitHub repository.
+3. In the host: **New project → Deploy from GitHub** → pick the repository.
+4. Build command: `npm install`. Start command: `npm start`.
 5. Set these **environment variables**:
+   - `DATABASE_URL` = the Supabase connection string (keep it secret)
    - `ADMIN_PASSWORD` = the strong password
-   - `DATA_DIR` = `/data`
    - `NODE_ENV` = `production`
    - `TRUST_PROXY` = `1`
 6. Deploy. Open the address the host gives you. The shop loads; admin is at `…/#/admin`.
-7. (Optional) Add the client's domain in the host's *Domains* screen and follow its DNS instructions. HTTPS is added by the host.
+7. (Optional) Add the client's domain and follow the host's DNS instructions.
 
 ## 4. Option B – Your own Linux server (VPS, Ubuntu)
 
@@ -94,7 +93,7 @@ The database will be at `/var/lib/vsd/vsd.db`.
 
 ## 6. How to view the database / your data
 
-**Way 1 – the admin panel (normal daily use).** Orders, products, inventory (with change log) and the dashboard are all there. *Orders → Export to Excel* downloads orders as `.xlsx`.
+**Way 1 – the admin panel (normal daily use).** Orders, products, inventory (with change log) and the dashboard are all there.
 
 **Way 2 – CSV files for Excel.** On the server run:
 ```bash
@@ -102,29 +101,24 @@ npm run export
 ```
 This writes `orders-DATE.csv` and `products-DATE.csv` into `data/exports/`. Open them in Excel.
 
-**Way 3 – look inside the database file (for the technical person).**
-1. Install the free **DB Browser for SQLite** (sqlitebrowser.org) on your PC.
-2. Copy a **backup** file (`vsd-DATE.db`) to your PC – do not open the live file on the server.
-3. *File → Open Database Read Only*.
-4. Tables:
-   - `orders` – one row per order; the `j` column holds the full order as text (JSON).
-   - `doc` – one row `catalog` holding products, combos, banners and settings as JSON.
+**Way 3 – look inside the database (for the technical person).**
+Open the Supabase dashboard → Table Editor. Tables:
+- `orders` – one row per order; the `j` column holds the full order as JSON.
+- `doc` – one row `catalog` holding products, combos, banners and settings as JSON.
 
-**Never edit the database file by hand** – use the admin panel. A wrong edit can break orders or stock.
+**Never edit the database by hand** – use the admin panel. A wrong edit can break orders or stock.
 
 ## 7. Backups (very important)
 
-```bash
-npm run backup
-```
-Creates `data/backups/vsd-DATE.db` (a safe copy, can run while the shop is live; keeps the last 14).
-**Photos** are separate: also copy the `data/uploads/` folder.
+Supabase keeps **daily automatic backups** on paid plans. On the free tier:
+- Go to Supabase dashboard → Database → Backups to see available backups.
+- For extra safety, run a manual export periodically:
+  ```bash
+  pg_dump $DATABASE_URL > vsd-backup-$(date +%F).sql
+  ```
+- Photos in `data/uploads/` are separate – back those up too (or use Cloudinary so they are stored in the cloud automatically).
 
-- **Automatic daily backup (Linux):** `sudo crontab -u vsd -e` and add
-  `0 2 * * * cd /opt/vsd && DATA_DIR=/var/lib/vsd npm run backup`
-- **A backup on the same server is not enough.** Download the `backups/` and `uploads/` folders to another place (owner's PC, Google Drive) at least **weekly**.
-- **Restore:** stop the server, replace `data/vsd.db` with the backup file (rename it to `vsd.db`), put the `uploads/` folder back, start the server.
-- On a managed host, ask the host whether volume snapshots/backups are available and switch them on.
+**Restore:** Supabase dashboard → Backups → Restore, or `psql $DATABASE_URL < vsd-backup.sql`.
 
 ## 8. Everyday operations
 
@@ -149,7 +143,8 @@ Creates `data/backups/vsd-DATE.db` (a safe copy, can run while the shop is live;
 | Red "NOT SAVED" message after pressing Save | the server refused the change; the message says why (for example the admin session ended – sign in again and repeat). The form stays open so nothing is lost. |
 | Photos upload fails for every photo | the proxy blocks big uploads (`client_max_body_size 8m` in nginx) or the `data/uploads` folder is not writable |
 | Excel export button does nothing | needs internet (loads a library) – or use `npm run export` |
-| Server won't start: "node:sqlite" error | Node is older than 22.5 – upgrade Node |
+| Server won't start: "DATABASE_URL … is not set" | Set DATABASE_URL in your .env or host environment |
+| Server won't start: connection refused / SSL error | Check DATABASE_URL is correct and includes `?sslmode=require` or equivalent |
 
 ## 10. What this version does NOT do yet (tell the owner)
 

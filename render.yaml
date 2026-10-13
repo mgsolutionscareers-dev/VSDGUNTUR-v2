@@ -3,15 +3,13 @@ services:
     name: vsd-dryfruits
     runtime: node
     plan: starter
-    buildCommand: ""
+    buildCommand: "npm install"
     startCommand: npm start
-    disk:
-      name: vsd-data
-      mountPath: /var/data
-      sizeGB: 1
     envVars:
-      - key: DATA_DIR
-        value: /var/data
+      - key: DATABASE_URL
+        sync: false
+      - key: CLOUDINARY_URL
+        sync: false
       - key: NODE_ENV
         value: production
       - key: TRUST_PROXY

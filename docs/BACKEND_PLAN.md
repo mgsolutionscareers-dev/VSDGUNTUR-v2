@@ -1,4 +1,6 @@
-> **Status:** phase 1 is done – a working Node + SQLite backend (`server/`). This document describes the later move to PostgreSQL / Next.js / Razorpay.
+> **Status:** Phase 1 complete – Node + **Postgres** backend (`server/`).
+> The SQLite data layer has been migrated to Supabase Postgres using the `pg` package.
+> This document describes the further evolution to a full Next.js / Razorpay stack.
 
 # Backend plan (phase 2)
 
@@ -9,15 +11,14 @@ User(role: ADMIN|CUSTOMER) · Address · Category · Product · ProductImage · 
 Combo · ComboItem(variantId, qty) · Cart/CartItem · Wishlist · Order · OrderItem · Payment · Coupon · Review · Banner · InventoryTransaction · Setting.
 Order: orderNo `VSD-YYYY-000001`, status, paymentStatus, trackingNumber, totals, gst fields.
 
-## Mapping from this demo
-| Demo (`js/…`) | Production |
+## Mapping from current backend
+| Current (`server/index.js`) | Production |
 |---|---|
-| `seed.js` / localStorage `D` | Postgres tables + `prisma/seed.ts` |
-| `place()` stock deduction | DB transaction with row locks (no overselling) |
-| `login()` | hashed passwords, HTTP-only session cookie, rate limiting |
-| image upload to data-URI | Cloudinary upload, store URL |
-| `xl()` Excel | server-side export (SheetJS) |
-| `inv()` invoice | server-rendered PDF |
+| `doc` table (catalog JSONB blob) | normalised Postgres tables + `prisma/seed.ts` |
+| `SELECT … FOR UPDATE` stock deduction | Prisma transactions with row locks (no overselling) |
+| scrypt password, HTTP-only session cookie | hashed passwords, JWT or next-auth |
+| image upload to `data/uploads/` | Cloudinary upload, store URL |
+| `npm run export` CSV | server-side export (SheetJS) |
 
 ## Phases
 1. Auth, schema, admin shell · 2. Catalogue, variants, inventory · 3. Storefront + cart · 4. Checkout, orders, Razorpay (webhook-verified) ·
